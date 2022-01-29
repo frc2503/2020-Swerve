@@ -61,14 +61,12 @@ public class Robot extends TimedRobot {
     private double WheelX;
     private double WheelY;
     private double WheelAng;
-    private double WheelAngDiff;
     private double WheelSpd;
-    private double CurrentAng;
     private double RotateXY;
 
     private Wheel(CANSparkMax Drive, CANSparkMax Steer, RelativeEncoder Encoder, SparkMaxPIDController PIDController,
         int RotateAng, int WheelAngQuadrantMod, double EncoderPos, double WheelX, double WheelY, double WheelAng,
-        double WheelAngDiff, double WheelSpd, double CurrentAng, double RotateXY) {
+        double WheelSpd, double RotateXY) {
       this.Drive = Drive;
       this.Steer = Steer;
       this.Encoder = Encoder;
@@ -79,9 +77,7 @@ public class Robot extends TimedRobot {
       this.WheelX = WheelX;
       this.WheelY = WheelY;
       this.WheelAng = WheelAng;
-      this.WheelAngDiff = WheelAngDiff;
       this.WheelSpd = WheelSpd;
-      this.CurrentAng = CurrentAng;
       this.RotateXY = RotateXY;
     };
 
@@ -105,13 +101,13 @@ public class Robot extends TimedRobot {
   };
 
   private Wheel FrontRight = new Wheel(null, null, null, null, StrafeAngCosFix, StrafeAngCosFix, RightStickX,
-      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
+      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
   private Wheel FrontLeft = new Wheel(null, null, null, null, StrafeAngCosFix, StrafeAngCosFix, RightStickX,
-      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
+      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
   private Wheel BackLeft = new Wheel(null, null, null, null, StrafeAngCosFix, StrafeAngCosFix, RightStickX, RightStickX,
-      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
+      RightStickX, RightStickX, RightStickX, RightStickX);
   private Wheel BackRight = new Wheel(null, null, null, null, StrafeAngCosFix, StrafeAngCosFix, RightStickX,
-      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
+      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
 
   @Override
   public void robotInit() {
@@ -176,19 +172,6 @@ public class Robot extends TimedRobot {
     }
     ;
 
-    // Get encoder positions once, to prevent discrepancies
-    FrontRight.EncoderPos = FrontRight.Encoder.getPosition();
-    FrontLeft.EncoderPos = FrontLeft.Encoder.getPosition();
-    BackLeft.EncoderPos = BackLeft.Encoder.getPosition();
-    BackRight.EncoderPos = BackRight.Encoder.getPosition();
-
-    // Find the current angle of the wheels, to be able to turn them to the correct
-    // position later.
-    FrontRight.CurrentAng = ((Math.abs(FrontRight.EncoderPos) - Math.floor(Math.abs(FrontRight.EncoderPos))) * 360);
-    FrontLeft.CurrentAng = ((Math.abs(FrontLeft.EncoderPos) - Math.floor(Math.abs(FrontLeft.EncoderPos))) * 360);
-    BackLeft.CurrentAng = ((Math.abs(BackLeft.EncoderPos) - Math.floor(Math.abs(BackLeft.EncoderPos))) * 360);
-    BackRight.CurrentAng = ((Math.abs(BackRight.EncoderPos) - Math.floor(Math.abs(BackRight.EncoderPos))) * 360);
-
     // Fixes the 270 degree discrepancy between how wheel angles are measured and
     // how the joystick angles are measured. This also puts the angle into the
     // correct quadrant after trig.
@@ -218,18 +201,18 @@ public class Robot extends TimedRobot {
     StrafeAng = (Math.toDegrees(Math.atan(Math.abs(RightStickY) / Math.abs(RightStickX))) + StrafeAngQuadrantMod);
 
     // Set angle wheels should be at for rotating CW and CCW
-    if (RightStickZ > 0) { // CW
+    if (RightStickZ > 0.05) { // CW
       FrontRight.RotateAng = 225;
       FrontLeft.RotateAng = 315;
       BackLeft.RotateAng = 45;
       BackRight.RotateAng = 135;
-    } else { // CCW
+    } 
+    else if (RightStickZ < -0.05) { // CCW
       FrontRight.RotateAng = 45;
       FrontLeft.RotateAng = 135;
       BackLeft.RotateAng = 225;
       BackRight.RotateAng = 315;
-    }
-    ;
+    };
 
     // Find the magnitude of the strafe vector
     StrafeMag = (Math.sqrt(Math.pow(RightStickX, 2) + Math.pow(RightStickY, 2)));
@@ -279,14 +262,43 @@ public class Robot extends TimedRobot {
     BackLeft.WheelSpd = (Math.sqrt(Math.pow(BackLeft.WheelX, 2) + Math.pow(BackLeft.WheelY, 2)));
     BackRight.WheelSpd = (Math.sqrt(Math.pow(BackRight.WheelX, 2) + Math.pow(BackRight.WheelY, 2)));
 
+    if (FrontRight.WheelSpd < 0.05) {
+      if (FrontRight.WheelSpd > -0.05) {
+        FrontRight.WheelSpd = 0;
+      }
+    }
+    if (FrontLeft.WheelSpd < 0.05) {
+      if (FrontLeft.WheelSpd > -0.05) {
+        FrontLeft.WheelSpd = 0;
+      }    
+    }
+    if (BackLeft.WheelSpd < 0.05) {
+      if (BackLeft.WheelSpd > -0.05) {
+        BackLeft.WheelSpd = 0;
+      }   
+    }
+    if (BackRight.WheelSpd < 0.05) {
+      if (BackRight.WheelSpd > -0.05) {
+        BackRight.WheelSpd = 0;
+      }
+    }
+
     // Compare current wheel angle to desired wheel angle, and determine whether to
     // spin CW, CCW, or not at all to reach desired wheel angle
     FrontRight.PIDController.setReference((FrontRight.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
-    FrontLeft.PIDController.setReference((FrontRight.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
-    BackLeft.PIDController.setReference((FrontRight.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
-    BackRight.PIDController.setReference((FrontRight.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
+    FrontLeft.PIDController.setReference((FrontLeft.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
+    BackLeft.PIDController.setReference((BackLeft.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
+    BackRight.PIDController.setReference((BackRight.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
 
-    System.out.println(FrontRight.WheelSpd);
+    System.out.println("FrontRight.WheelAng:" + FrontRight.WheelAng);
+    System.out.println("FrontLeft.WheelAng:" + FrontLeft.WheelAng);
+    System.out.println("BackLeft.WheelAng:" + BackLeft.WheelAng);
+    System.out.println("BackRight.WheelAng:" + BackRight.WheelAng);
+    System.out.println("FrontRight.EncoderPos:" + FrontRight.Encoder.getPosition());
+    System.out.println("FrontLeft.EncoderPos:" + FrontLeft.Encoder.getPosition());
+    System.out.println("BackLeft.EncoderPos:" + BackLeft.Encoder.getPosition());
+    System.out.println("BackRight.EncoderPos:" + BackRight.Encoder.getPosition());
+    //System.out.println(FrontRight.WheelSpd);
 
     // Set speed of each wheel to desired speed
     // FrontRight.Drive.set(FrontRight.WheelSpd);
