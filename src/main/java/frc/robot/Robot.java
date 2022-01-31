@@ -25,7 +25,11 @@ import org.ejml.equation.Variable;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.math.controller.PIDController;
+import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.kinematics.SwerveDriveOdometry;
+import edu.wpi.first.math.kinematics.SwerveModuleState;
 
 /**
  * This is a demo program showing the use of the RobotDrive class, specifically
@@ -38,76 +42,39 @@ public class Robot extends TimedRobot {
   private AHRS AHRS;
   private double RightStickX;
   private double RightStickY;
-  private double RightStickZ;
+  private double RightStickTwist;
   private double RobotAng;
-  private double StrafeAng;
-  private double StrafeX;
-  private double StrafeY;
-  private double StrafeMag;
   private double P;
   private double I;
   private double D;
-  private int StrafeAngQuadrantMod;
-  private int StrafeAngCosFix;
+  Translation2d FrontRightLocation = new Translation2d(0.381, 0.381);
+  Translation2d FrontLeftLocation = new Translation2d(0.381, -0.381);
+  Translation2d BackLeftLocation = new Translation2d(-0.381, -0.381);
+  Translation2d BackRightLocation = new Translation2d(-0.381, 0.381);
+  SwerveDriveKinematics Kinematics = new SwerveDriveKinematics(FrontRightLocation, FrontLeftLocation, BackLeftLocation, BackRightLocation);
 
   private class Wheel {
     private CANSparkMax Drive;
     private CANSparkMax Steer;
     private RelativeEncoder Encoder;
     private SparkMaxPIDController PIDController;
-    private int RotateAng;
-    private int WheelAngQuadrantMod;
-    private double EncoderPos;
-    private double WheelX;
-    private double WheelY;
-    private double WheelAng;
-    private double WheelSpd;
-    private double RotateXY;
+    private double WantedAng;
+    private double NeededAng;
 
-    private Wheel(CANSparkMax Drive, CANSparkMax Steer, RelativeEncoder Encoder, SparkMaxPIDController PIDController,
-        int RotateAng, int WheelAngQuadrantMod, double EncoderPos, double WheelX, double WheelY, double WheelAng,
-        double WheelSpd, double RotateXY) {
+    private Wheel(CANSparkMax Drive, CANSparkMax Steer, RelativeEncoder Encoder, SparkMaxPIDController PIDController, double WantedAng, double NeededAng) {
       this.Drive = Drive;
       this.Steer = Steer;
       this.Encoder = Encoder;
       this.PIDController = PIDController;
-      this.RotateAng = RotateAng;
-      this.WheelAngQuadrantMod = WheelAngQuadrantMod;
-      this.EncoderPos = EncoderPos;
-      this.WheelX = WheelX;
-      this.WheelY = WheelY;
-      this.WheelAng = WheelAng;
-      this.WheelSpd = WheelSpd;
-      this.RotateXY = RotateXY;
-    };
-
-    // Used to find the angle to add to vector angles to fix the quadrant of wheel
-    // vectors after trig later
-    private int FindWheelAngQuadrantMod(double X, double Y) {
-      if (X > 0) {
-        if (Y > 0) { // Upper right quadrant
-          return 270;
-        } else { // Lower right quadrant
-          return 180;
-        }
-      } else {
-        if (Y > 0) { // Upper left quadrant
-          return 0;
-        } else { // Lower left quadrant
-          return 90;
-        }
-      }
+      this.WantedAng = WantedAng;
+      this.NeededAng = NeededAng;
     };
   };
 
-  private Wheel FrontRight = new Wheel(null, null, null, null, StrafeAngCosFix, StrafeAngCosFix, RightStickX,
-      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
-  private Wheel FrontLeft = new Wheel(null, null, null, null, StrafeAngCosFix, StrafeAngCosFix, RightStickX,
-      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
-  private Wheel BackLeft = new Wheel(null, null, null, null, StrafeAngCosFix, StrafeAngCosFix, RightStickX, RightStickX,
-      RightStickX, RightStickX, RightStickX, RightStickX);
-  private Wheel BackRight = new Wheel(null, null, null, null, StrafeAngCosFix, StrafeAngCosFix, RightStickX,
-      RightStickX, RightStickX, RightStickX, RightStickX, RightStickX);
+  private Wheel FrontRight = new Wheel(null, null, null, null, D, D);
+  private Wheel FrontLeft = new Wheel(null, null, null, null, D, D);
+  private Wheel BackLeft = new Wheel(null, null, null, null, D, D);
+  private Wheel BackRight = new Wheel(null, null, null, null, D, D);
 
   @Override
   public void robotInit() {
@@ -141,7 +108,7 @@ public class Robot extends TimedRobot {
     FrontRight.PIDController.setOutputRange(-1, 1);
     FrontLeft.PIDController.setOutputRange(-1, 1);
     BackLeft.PIDController.setOutputRange(-1, 1);
-    BackRight.PIDController.setOutputRange(-1, 1);
+    BackRight.PIDController.setOutputRange(1, -1);
     FrontRight.PIDController.setP(P);
     FrontLeft.PIDController.setP(P);
     BackLeft.PIDController.setP(P);
@@ -162,148 +129,63 @@ public class Robot extends TimedRobot {
     // Find right joystick positions once, to prevent discrepancies
     RightStickX = RightStick.getX();
     RightStickY = RightStick.getY();
-    RightStickZ = RightStick.getRawAxis(3);
+    RightStickTwist = RightStick.getRawAxis(3);
 
     // Find angle of the robot, to allow for strafing while rotating
     RobotAng = AHRS.getYaw();
 
     if (RobotAng < 0) {
       RobotAng = (Math.abs(RobotAng) + 180);
-    }
-    ;
-
-    // Fixes the 270 degree discrepancy between how wheel angles are measured and
-    // how the joystick angles are measured. This also puts the angle into the
-    // correct quadrant after trig.
-    // Also fixes the sign of outputs of cosine later
-    if (RightStickX > 0) {
-      if (RightStickY > 0) { // Upper right quadrant
-        StrafeAngQuadrantMod = 270;
-        StrafeAngCosFix = -1;
-      } else { // Lower right quadrant
-        StrafeAngQuadrantMod = 180;
-        StrafeAngCosFix = 1;
-      }
-      ;
-    } else {
-      if (RightStickY > 0) { // Upper left quadrant
-        StrafeAngQuadrantMod = 0;
-        StrafeAngCosFix = 1;
-      } else { // Lower left quadrant
-        StrafeAngQuadrantMod = 90;
-        StrafeAngCosFix = -1;
-      }
-      ;
-    }
-    ;
-
-    // Find the angle the robot should end up strafing
-    StrafeAng = (Math.toDegrees(Math.atan(Math.abs(RightStickY) / Math.abs(RightStickX))) + StrafeAngQuadrantMod);
-
-    // Set angle wheels should be at for rotating CW and CCW
-    if (RightStickZ > 0.05) { // CW
-      FrontRight.RotateAng = 225;
-      FrontLeft.RotateAng = 315;
-      BackLeft.RotateAng = 45;
-      BackRight.RotateAng = 135;
-    } 
-    else if (RightStickZ < -0.05) { // CCW
-      FrontRight.RotateAng = 45;
-      FrontLeft.RotateAng = 135;
-      BackLeft.RotateAng = 225;
-      BackRight.RotateAng = 315;
     };
 
-    // Find the magnitude of the strafe vector
-    StrafeMag = (Math.sqrt(Math.pow(RightStickX, 2) + Math.pow(RightStickY, 2)));
-
-    // Find angle for strafing in relation to the robot, break the vector down into
-    // X and Y components, and apply the cosine fix
-    StrafeX = (((Math.cos(StrafeAng - RobotAng)) * StrafeMag) * StrafeAngCosFix);
-    StrafeY = ((Math.sin(StrafeAng - RobotAng)) * StrafeMag);
-
-    // Break rotational vector down into X and Y components for each wheel. The X
-    // and Y components are always equal, so only one variable is used.
-    FrontRight.RotateXY = ((Math.sin(FrontRight.RotateAng)) * RightStickZ);
-    FrontLeft.RotateXY = ((Math.sin(FrontLeft.RotateAng)) * RightStickZ);
-    BackLeft.RotateXY = ((Math.sin(BackLeft.RotateAng)) * RightStickZ);
-    BackRight.RotateXY = ((Math.sin(BackRight.RotateAng)) * RightStickZ);
-
-    // Find the X and Y components of each wheel's vector
-    FrontRight.WheelX = (StrafeX + FrontRight.RotateXY);
-    FrontLeft.WheelX = (StrafeX + FrontLeft.RotateXY);
-    BackLeft.WheelX = (StrafeX + BackLeft.RotateXY);
-    BackRight.WheelX = (StrafeX + BackRight.RotateXY);
-    FrontRight.WheelY = (StrafeY + FrontRight.RotateXY);
-    FrontLeft.WheelY = (StrafeY + FrontLeft.RotateXY);
-    BackLeft.WheelY = (StrafeY + BackLeft.RotateXY);
-    BackRight.WheelY = (StrafeY + BackRight.RotateXY);
-
-    // Find the angle to add to vector angles to fix the quadrant of wheel vectors
-    // after trig
-    FrontRight.WheelAngQuadrantMod = FrontRight.FindWheelAngQuadrantMod(FrontRight.WheelX, FrontRight.WheelY);
-    FrontLeft.WheelAngQuadrantMod = FrontLeft.FindWheelAngQuadrantMod(FrontLeft.WheelX, FrontLeft.WheelY);
-    BackLeft.WheelAngQuadrantMod = BackLeft.FindWheelAngQuadrantMod(BackLeft.WheelX, BackLeft.WheelY);
-    BackRight.WheelAngQuadrantMod = BackLeft.FindWheelAngQuadrantMod(BackRight.WheelX, BackRight.WheelY);
-
-    // Find the angle of the wheel vectors, and fix angle quadrant after trig
-    FrontRight.WheelAng = ((Math.toDegrees(Math.atan(Math.abs(FrontRight.WheelY) / Math.abs(FrontRight.WheelX))))
-        + FrontRight.WheelAngQuadrantMod);
-    FrontLeft.WheelAng = ((Math.toDegrees(Math.atan(Math.abs(FrontLeft.WheelY) / Math.abs(FrontLeft.WheelX))))
-        + FrontLeft.WheelAngQuadrantMod);
-    BackLeft.WheelAng = ((Math.toDegrees(Math.atan(Math.abs(BackLeft.WheelY) / Math.abs(BackLeft.WheelX))))
-        + BackLeft.WheelAngQuadrantMod);
-    BackRight.WheelAng = ((Math.toDegrees(Math.atan(Math.abs(BackRight.WheelY) / Math.abs(BackRight.WheelX))))
-        + BackRight.WheelAngQuadrantMod);
-
-    // Find the magnitude of the wheel vectors
-    FrontRight.WheelSpd = (Math.sqrt(Math.pow(FrontRight.WheelX, 2) + Math.pow(FrontRight.WheelY, 2)));
-    FrontLeft.WheelSpd = (Math.sqrt(Math.pow(FrontLeft.WheelX, 2) + Math.pow(FrontLeft.WheelY, 2)));
-    BackLeft.WheelSpd = (Math.sqrt(Math.pow(BackLeft.WheelX, 2) + Math.pow(BackLeft.WheelY, 2)));
-    BackRight.WheelSpd = (Math.sqrt(Math.pow(BackRight.WheelX, 2) + Math.pow(BackRight.WheelY, 2)));
-
-    if (FrontRight.WheelSpd < 0.05) {
-      if (FrontRight.WheelSpd > -0.05) {
-        FrontRight.WheelSpd = 0;
-      }
+    if (Math.abs(RightStickX) < 0.1) {
+      RightStickX = 0;
     }
-    if (FrontLeft.WheelSpd < 0.05) {
-      if (FrontLeft.WheelSpd > -0.05) {
-        FrontLeft.WheelSpd = 0;
-      }    
+    if (Math.abs(RightStickY) < 0.1) {
+      RightStickY = 0;
     }
-    if (BackLeft.WheelSpd < 0.05) {
-      if (BackLeft.WheelSpd > -0.05) {
-        BackLeft.WheelSpd = 0;
-      }   
-    }
-    if (BackRight.WheelSpd < 0.05) {
-      if (BackRight.WheelSpd > -0.05) {
-        BackRight.WheelSpd = 0;
-      }
+    if (Math.abs(RightStickTwist) < 0.1) {
+      RightStickTwist = 0;
     }
 
-    // Compare current wheel angle to desired wheel angle, and determine whether to
-    // spin CW, CCW, or not at all to reach desired wheel angle
-    FrontRight.PIDController.setReference((FrontRight.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
-    FrontLeft.PIDController.setReference((FrontLeft.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
-    BackLeft.PIDController.setReference((BackLeft.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
-    BackRight.PIDController.setReference((BackRight.WheelAng / 360.0) * (59.0 + (1.0/6.0)), ControlType.kPosition);
+    // Example chassis speeds: 1 meter per second forward, 3 meters
+    // per second to the left, and rotation at 1.5 radians per second
+    // counterclockwise.
+    ChassisSpeeds speeds = new ChassisSpeeds((RightStickY * -1), RightStickX, RightStickTwist);
 
-    System.out.println("FrontRight.WheelAng:" + FrontRight.WheelAng);
-    System.out.println("FrontLeft.WheelAng:" + FrontLeft.WheelAng);
-    System.out.println("BackLeft.WheelAng:" + BackLeft.WheelAng);
-    System.out.println("BackRight.WheelAng:" + BackRight.WheelAng);
-    System.out.println("FrontRight.EncoderPos:" + FrontRight.Encoder.getPosition());
-    System.out.println("FrontLeft.EncoderPos:" + FrontLeft.Encoder.getPosition());
-    System.out.println("BackLeft.EncoderPos:" + BackLeft.Encoder.getPosition());
-    System.out.println("BackRight.EncoderPos:" + BackRight.Encoder.getPosition());
-    //System.out.println(FrontRight.WheelSpd);
+    // Convert to module states
+    SwerveModuleState[] moduleStates = Kinematics.toSwerveModuleStates(speeds);
 
-    // Set speed of each wheel to desired speed
-    // FrontRight.Drive.set(FrontRight.WheelSpd);
-    // FrontLeft.Drive.set(FrontLeft.WheelSpd);
-    // BackLeft.Drive.set(BackLeft.WheelSpd);
-    // BackRight.Drive.set(BackRight.WheelSpd);
+    // Front left module state
+    SwerveModuleState frontLeft = moduleStates[0];
+
+    // Front right module state
+    SwerveModuleState frontRight = moduleStates[1];
+
+    // Back left module state
+    SwerveModuleState backLeft = moduleStates[2];
+
+    // Back right module state
+    SwerveModuleState backRight = moduleStates[3];
+
+    FrontRight.WantedAng = ((frontRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+    FrontLeft.WantedAng = ((frontLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+    BackLeft.WantedAng = ((backLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+    BackRight.WantedAng = ((backRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+
+    FrontRight.NeededAng = (FrontRight.WantedAng - RobotAng);
+    FrontLeft.NeededAng = (FrontLeft.WantedAng - RobotAng);
+    BackLeft.NeededAng = (BackLeft.WantedAng - RobotAng);
+    BackRight.NeededAng = (BackRight.WantedAng - RobotAng);
+
+    FrontRight.PIDController.setReference(FrontRight.WantedAng, ControlType.kPosition);
+    FrontLeft.PIDController.setReference(FrontLeft.WantedAng, ControlType.kPosition);
+    BackLeft.PIDController.setReference(BackLeft.WantedAng, ControlType.kPosition);
+    BackRight.PIDController.setReference(BackRight.WantedAng, ControlType.kPosition);
+
+    //FrontRight.Drive.set(frontRight.speedMetersPerSecond / 6);
+    //FrontLeft.Drive.set(frontLeft.speedMetersPerSecond / 6);
+    //BackLeft.Drive.set(backLeft.speedMetersPerSecond / 6);
+    //BackRight.Drive.set(backRight.speedMetersPerSecond / 6);
   };
 };
