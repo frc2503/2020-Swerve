@@ -6,6 +6,7 @@ package frc.robot;
 
 import edu.wpi.first.wpilibj.I2C;
 import edu.wpi.first.wpilibj.Joystick;
+import edu.wpi.first.wpilibj.SpeedControllerGroup;
 import edu.wpi.first.wpilibj.motorcontrol.*;
 import edu.wpi.first.wpilibj.I2C.Port;
 
@@ -15,6 +16,7 @@ import com.revrobotics.SparkMaxRelativeEncoder;
 import com.revrobotics.CANSparkMax.ControlType;
 
 import javax.lang.model.util.ElementScanner6;
+import javax.swing.GroupLayout.Group;
 
 import com.kauailabs.navx.frc.AHRS;
 import com.revrobotics.SparkMaxRelativeEncoder.Type;
@@ -37,6 +39,9 @@ import edu.wpi.first.math.kinematics.SwerveModuleState;
  * necessary to operate a robot with tank drive.
  */
 public class Robot extends TimedRobot {
+  private MotorControllerGroup RightSide;
+  private MotorControllerGroup LeftSide;
+  private DifferentialDrive ArcadeDrive;
   private Joystick LeftStick;
   private Joystick RightStick;
   private AHRS AHRS;
@@ -47,11 +52,12 @@ public class Robot extends TimedRobot {
   private double P;
   private double I;
   private double D;
-  Translation2d FrontRightLocation = new Translation2d(0.381, 0.381);
-  Translation2d FrontLeftLocation = new Translation2d(0.381, -0.381);
+  Translation2d FrontRightLocation = new Translation2d(0.381, -0.381);
+  Translation2d FrontLeftLocation = new Translation2d(0.381, 0.381);
   Translation2d BackLeftLocation = new Translation2d(-0.381, -0.381);
   Translation2d BackRightLocation = new Translation2d(-0.381, 0.381);
   SwerveDriveKinematics Kinematics = new SwerveDriveKinematics(FrontRightLocation, FrontLeftLocation, BackLeftLocation, BackRightLocation);
+  SwerveDriveOdometry Odometry = new SwerveDriveOdometry(Kinematics, AHRS.getRotation2d());
 
   private class Wheel {
     private CANSparkMax Drive;
@@ -68,8 +74,8 @@ public class Robot extends TimedRobot {
       this.PIDController = PIDController;
       this.WantedAng = WantedAng;
       this.NeededAng = NeededAng;
-    };
-  };
+    }
+  }
 
   private Wheel FrontRight = new Wheel(null, null, null, null, D, D);
   private Wheel FrontLeft = new Wheel(null, null, null, null, D, D);
@@ -78,8 +84,8 @@ public class Robot extends TimedRobot {
 
   @Override
   public void robotInit() {
-    LeftStick = new Joystick(0);
-    RightStick = new Joystick(1);
+    LeftStick = new Joystick(1);
+    RightStick = new Joystick(0);
     AHRS = new AHRS(I2C.Port.kMXP);
     FrontRight.Drive = new CANSparkMax(1, MotorType.kBrushless);
     FrontLeft.Drive = new CANSparkMax(2, MotorType.kBrushless);
@@ -89,6 +95,9 @@ public class Robot extends TimedRobot {
     FrontLeft.Steer = new CANSparkMax(6, MotorType.kBrushed);
     BackLeft.Steer = new CANSparkMax(7, MotorType.kBrushed);
     BackRight.Steer = new CANSparkMax(8, MotorType.kBrushed);
+    RightSide = new MotorControllerGroup(FrontRight.Drive,BackRight.Drive);
+    LeftSide = new MotorControllerGroup(FrontLeft.Drive,BackLeft.Drive);
+    ArcadeDrive = new DifferentialDrive(LeftSide, RightSide);
     FrontRight.Encoder = FrontRight.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
     FrontLeft.Encoder = FrontLeft.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
     BackLeft.Encoder = BackLeft.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
@@ -108,7 +117,7 @@ public class Robot extends TimedRobot {
     FrontRight.PIDController.setOutputRange(-1, 1);
     FrontLeft.PIDController.setOutputRange(-1, 1);
     BackLeft.PIDController.setOutputRange(-1, 1);
-    BackRight.PIDController.setOutputRange(1, -1);
+    BackRight.PIDController.setOutputRange(-1, 1);
     FrontRight.PIDController.setP(P);
     FrontLeft.PIDController.setP(P);
     BackLeft.PIDController.setP(P);
@@ -121,12 +130,12 @@ public class Robot extends TimedRobot {
     FrontLeft.PIDController.setD(D);
     BackLeft.PIDController.setD(D);
     BackRight.PIDController.setD(D);
-  };
+
+  }
 
   @Override
   public void teleopPeriodic() {
-
-    // Find right joystick positions once, to prevent discrepancies
+    //Find right joystick positions once, to prevent discrepancies
     RightStickX = RightStick.getX();
     RightStickY = RightStick.getY();
     RightStickTwist = RightStick.getRawAxis(3);
@@ -136,7 +145,7 @@ public class Robot extends TimedRobot {
 
     if (RobotAng < 0) {
       RobotAng = (Math.abs(RobotAng) + 180);
-    };
+    }
 
     if (Math.abs(RightStickX) < 0.1) {
       RightStickX = 0;
@@ -148,44 +157,54 @@ public class Robot extends TimedRobot {
       RightStickTwist = 0;
     }
 
-    // Example chassis speeds: 1 meter per second forward, 3 meters
-    // per second to the left, and rotation at 1.5 radians per second
-    // counterclockwise.
+    //Set ChassisSpeeds for actual movement
     ChassisSpeeds speeds = new ChassisSpeeds((RightStickY * -1), RightStickX, RightStickTwist);
 
-    // Convert to module states
-    SwerveModuleState[] moduleStates = Kinematics.toSwerveModuleStates(speeds);
+    //Convert to module states
+    SwerveModuleState[] ModuleStates = Kinematics.toSwerveModuleStates(speeds);
 
-    // Front left module state
-    SwerveModuleState frontLeft = moduleStates[0];
+    //Front left module state
+    SwerveModuleState frontLeft = ModuleStates[0];
 
-    // Front right module state
-    SwerveModuleState frontRight = moduleStates[1];
+    //Front right module state
+    SwerveModuleState frontRight = ModuleStates[1];
 
-    // Back left module state
-    SwerveModuleState backLeft = moduleStates[2];
+    //Back left module state
+    SwerveModuleState backLeft = ModuleStates[2];
 
-    // Back right module state
-    SwerveModuleState backRight = moduleStates[3];
+    //Back right module state
+    SwerveModuleState backRight = ModuleStates[3];
 
-    FrontRight.WantedAng = ((frontRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
-    FrontLeft.WantedAng = ((frontLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
-    BackLeft.WantedAng = ((backLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
-    BackRight.WantedAng = ((backRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+    //Update Odometry for gyro implementation
+    Odometry.update(AHRS.getRotation2d(), ModuleStates);
 
-    FrontRight.NeededAng = (FrontRight.WantedAng - RobotAng);
-    FrontLeft.NeededAng = (FrontLeft.WantedAng - RobotAng);
-    BackLeft.NeededAng = (BackLeft.WantedAng - RobotAng);
-    BackRight.NeededAng = (BackRight.WantedAng - RobotAng);
+    if(RightStick.getRawButtonPressed(4)) {
+      ArcadeDrive.arcadeDrive(RightStickY, RightStickTwist);
+      FrontRight.PIDController.setReference(0, ControlType.kPosition);
+      FrontLeft.PIDController.setReference(0, ControlType.kPosition);
+      BackLeft.PIDController.setReference(0, ControlType.kPosition);
+      BackRight.PIDController.setReference(0, ControlType.kPosition);
+    }
+    else {
+      FrontRight.WantedAng = ((frontRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+      FrontLeft.WantedAng = ((frontLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+      BackLeft.WantedAng = ((backLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+      BackRight.WantedAng = ((backRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
 
-    FrontRight.PIDController.setReference(FrontRight.WantedAng, ControlType.kPosition);
-    FrontLeft.PIDController.setReference(FrontLeft.WantedAng, ControlType.kPosition);
-    BackLeft.PIDController.setReference(BackLeft.WantedAng, ControlType.kPosition);
-    BackRight.PIDController.setReference(BackRight.WantedAng, ControlType.kPosition);
+      FrontRight.NeededAng = (((RobotAng / 360) * (59.0 + (1.0/6.0))) - FrontRight.WantedAng);
+      FrontLeft.NeededAng = (((RobotAng / 360) * (59.0 + (1.0/6.0))) - FrontLeft.WantedAng);
+      BackLeft.NeededAng = (((RobotAng / 360) * (59.0 + (1.0/6.0))) - BackLeft.WantedAng);
+      BackRight.NeededAng = (((RobotAng / 360) * (59.0 + (1.0/6.0))) - BackRight.WantedAng);
 
-    //FrontRight.Drive.set(frontRight.speedMetersPerSecond / 6);
-    //FrontLeft.Drive.set(frontLeft.speedMetersPerSecond / 6);
-    //BackLeft.Drive.set(backLeft.speedMetersPerSecond / 6);
-    //BackRight.Drive.set(backRight.speedMetersPerSecond / 6);
+      FrontRight.PIDController.setReference(FrontRight.WantedAng, ControlType.kPosition);
+      FrontLeft.PIDController.setReference(FrontLeft.WantedAng, ControlType.kPosition);
+      BackLeft.PIDController.setReference(BackLeft.WantedAng, ControlType.kPosition);
+      BackRight.PIDController.setReference(BackRight.WantedAng, ControlType.kPosition);
+
+      FrontRight.Drive.set(frontRight.speedMetersPerSecond / 3);
+      FrontLeft.Drive.set(frontLeft.speedMetersPerSecond / 3);
+      BackLeft.Drive.set(backLeft.speedMetersPerSecond / 3);
+      BackRight.Drive.set(backRight.speedMetersPerSecond / 3);
+    };
   };
 };
