@@ -9,11 +9,15 @@ import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.SpeedControllerGroup;
 import edu.wpi.first.wpilibj.motorcontrol.*;
 import edu.wpi.first.wpilibj.I2C.Port;
+import edu.wpi.first.wpilibj.command.WaitCommand;
+import edu.wpi.first.wpilibj.command.WaitForChildren;
 
 import com.revrobotics.CANPIDController;
 import com.revrobotics.CANSparkMax;
 import com.revrobotics.SparkMaxRelativeEncoder;
 import com.revrobotics.CANSparkMax.ControlType;
+
+import java.util.concurrent.TimeUnit;
 
 import javax.lang.model.util.ElementScanner6;
 import javax.swing.GroupLayout.Group;
@@ -28,6 +32,7 @@ import com.revrobotics.SparkMaxPIDController;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 import org.ejml.equation.Variable;
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -51,9 +56,11 @@ public class Robot extends TimedRobot {
   private AHRS ahrs;
   private double RightStickX;
   private double RightStickY;
+  private double RightStickZ;
   private double RightStickTwist;
   private double LeftStickY;
   private double RobotAng;
+  private boolean HasBeenRun;
   private CANSparkMax ShooterTop;
   private CANSparkMax ShooterBottom;
   private CANSparkMax ArmTilt;
@@ -65,41 +72,43 @@ public class Robot extends TimedRobot {
   private Translation2d FrontLeftLocation = new Translation2d(0.381, 0.381);
   private Translation2d BackLeftLocation = new Translation2d(-0.381, -0.381);
   private Translation2d BackRightLocation = new Translation2d(-0.381, 0.381);
+  private Timer timer;
 
   SwerveDriveKinematics Kinematics = new SwerveDriveKinematics(FrontRightLocation, FrontLeftLocation, BackLeftLocation, BackRightLocation);
   //SwerveDriveOdometry Odometry = new SwerveDriveOdometry(Kinematics, ahrs.getRotation2d());
 
   private class Wheel {
     private CANSparkMax Drive;
+    private RelativeEncoder DriveEncoder;
+    private SparkMaxPIDController DrivePIDController;
     private CANSparkMax Steer;
-    private RelativeEncoder Encoder;
-    private SparkMaxPIDController PIDController;
+    private RelativeEncoder SteerEncoder;
+    private SparkMaxPIDController SteerPIDController;
     private double WantedAng;
-    private double NeededAng;
+    private double DistToPos;
+    private double DistSpdMod;
 
-    private Wheel(CANSparkMax Drive, CANSparkMax Steer, RelativeEncoder Encoder, SparkMaxPIDController PIDController, double WantedAng, double NeededAng) {
+    private Wheel(CANSparkMax Drive, RelativeEncoder DriveEncoder, SparkMaxPIDController DrivePIDController, CANSparkMax Steer, RelativeEncoder SteerEncoder, SparkMaxPIDController PIDController, double WantedAng, double DistToPos, double DistSpdMod) {
       this.Drive = Drive;
+      this.DriveEncoder = DriveEncoder;
+      this.DrivePIDController = DrivePIDController;
       this.Steer = Steer;
-      this.Encoder = Encoder;
-      this.PIDController = PIDController;
+      this.SteerEncoder = SteerEncoder;
+      this.SteerPIDController = SteerPIDController;
       this.WantedAng = WantedAng;
-      this.NeededAng = NeededAng;
+      this.DistToPos = DistToPos;
+      this.DistSpdMod = DistSpdMod;
     }
   }
 
-  private Wheel FrontRight = new Wheel(null, null, null, null, D, D);
-  private Wheel FrontLeft = new Wheel(null, null, null, null, D, D);
-  private Wheel BackLeft = new Wheel(null, null, null, null, D, D);
-  private Wheel BackRight = new Wheel(null, null, null, null, D, D);
-
-  private Wheel FrontRightDrive = new Wheel(null, null, null, null, D, D);
-  private Wheel FrontLeftDrive = new Wheel(null, null, null, null, D, D);
-  private Wheel BackRightDrive = new Wheel(null, null, null, null, D, D);
-  private Wheel BackLeftDrive = new Wheel(null, null, null, null, D, D);
-
+  private Wheel FrontRight = new Wheel(null, null, null, null, null, null, D, D, D);
+  private Wheel FrontLeft = new Wheel(null, null, null, null, null, null, D, D, D);
+  private Wheel BackLeft = new Wheel(null, null, null, null, null, null, D, D, D);
+  private Wheel BackRight = new Wheel(null, null, null, null, null, null, D, D, D);
 
   @Override
   public void robotInit() {
+    timer = new Timer();
     LeftStick = new Joystick(1);
     RightStick = new Joystick(0);
     ahrs = new AHRS(I2C.Port.kMXP);
@@ -113,89 +122,89 @@ public class Robot extends TimedRobot {
     BackLeft.Steer = new CANSparkMax(7, MotorType.kBrushed);
     BackRight.Steer = new CANSparkMax(8, MotorType.kBrushed);
     ShooterBottom = new CANSparkMax(9, MotorType.kBrushless);
-    //ShooterTop = new CANSparkMax(10, MotorType.kBrushless);
-    ArmTilt = new CANSparkMax(10, MotorType.kBrushed);
-    ArmExtend = new CANSparkMax(11, MotorType.kBrushed);
+    ShooterTop = new CANSparkMax(10, MotorType.kBrushless);
+    ArmTilt = new CANSparkMax(11, MotorType.kBrushed);
+    ArmExtend = new CANSparkMax(12, MotorType.kBrushed);
 
     RightSide = new MotorControllerGroup(FrontRight.Drive,BackRight.Drive);
     LeftSide = new MotorControllerGroup(FrontLeft.Drive,BackLeft.Drive);
     ArcadeDrive = new DifferentialDrive(LeftSide, RightSide);
 
-    FrontRight.Encoder = FrontRight.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
-    FrontLeft.Encoder = FrontLeft.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
-    BackLeft.Encoder = BackLeft.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
-    BackRight.Encoder = BackRight.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
+    FrontRight.SteerEncoder = FrontRight.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
+    FrontLeft.SteerEncoder = FrontLeft.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
+    BackLeft.SteerEncoder = BackLeft.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
+    BackRight.SteerEncoder = BackRight.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
 
-    FrontRightDrive.Encoder = FrontRight.Drive.getEncoder(SparkMaxRelativeEncoder.Type.kHallSensor, (42));
-    FrontLeftDrive.Encoder = FrontLeft.Drive.getEncoder(SparkMaxRelativeEncoder.Type.kHallSensor, (42));
-    BackRightDrive.Encoder = BackRight.Drive.getEncoder(SparkMaxRelativeEncoder.Type.kHallSensor, (42));
-    BackLeftDrive.Encoder = BackLeft.Drive.getEncoder(SparkMaxRelativeEncoder.Type.kHallSensor, (42));
+    FrontRight.DriveEncoder = FrontRight.Drive.getEncoder(SparkMaxRelativeEncoder.Type.kHallSensor, (42));
+    FrontLeft.DriveEncoder = FrontLeft.Drive.getEncoder(SparkMaxRelativeEncoder.Type.kHallSensor, (42));
+    BackRight.DriveEncoder = BackRight.Drive.getEncoder(SparkMaxRelativeEncoder.Type.kHallSensor, (42));
+    BackLeft.DriveEncoder = BackLeft.Drive.getEncoder(SparkMaxRelativeEncoder.Type.kHallSensor, (42));
 
-    FrontRight.Encoder.setPosition(0);
-    FrontLeft.Encoder.setPosition(0);
-    BackLeft.Encoder.setPosition(0);
-    BackRight.Encoder.setPosition(0);
+    FrontRight.SteerEncoder.setPosition(0);
+    FrontLeft.SteerEncoder.setPosition(0);
+    BackLeft.SteerEncoder.setPosition(0);
+    BackRight.SteerEncoder.setPosition(0);
 
-    FrontRightDrive.Encoder.setPosition(0);
-    FrontLeftDrive.Encoder.setPosition(0);
-    BackRightDrive.Encoder.setPosition(0);
-    BackLeftDrive.Encoder.setPosition(0);
+    FrontRight.DriveEncoder.setPosition(0);
+    FrontLeft.DriveEncoder.setPosition(0);
+    BackRight.DriveEncoder.setPosition(0);
+    BackLeft.DriveEncoder.setPosition(0);
 
     ahrs.calibrate();
 
-    FrontRight.PIDController = FrontRight.Steer.getPIDController();
-    FrontLeft.PIDController = FrontLeft.Steer.getPIDController();
-    BackLeft.PIDController = BackLeft.Steer.getPIDController();
-    BackRight.PIDController = BackRight.Steer.getPIDController();
+    FrontRight.SteerPIDController = FrontRight.Steer.getPIDController();
+    FrontLeft.SteerPIDController = FrontLeft.Steer.getPIDController();
+    BackLeft.SteerPIDController = BackLeft.Steer.getPIDController();
+    BackRight.SteerPIDController = BackRight.Steer.getPIDController();
 
-    FrontRightDrive.PIDController = FrontRight.Drive.getPIDController();
-    FrontLeftDrive.PIDController = FrontLeft.Drive.getPIDController();
-    BackRightDrive.PIDController = BackLeft.Drive.getPIDController();
-    BackLeftDrive.PIDController = BackRight.Drive.getPIDController();
+    FrontRight.DrivePIDController = FrontRight.Drive.getPIDController();
+    FrontLeft.DrivePIDController = FrontLeft.Drive.getPIDController();
+    BackRight.DrivePIDController = BackLeft.Drive.getPIDController();
+    BackLeft.DrivePIDController = BackRight.Drive.getPIDController();
    
     P = 1;
     I = 0;
     D = 0;
 
-    FrontRight.PIDController.setOutputRange(-1, 1);
-    FrontLeft.PIDController.setOutputRange(-1, 1);
-    BackLeft.PIDController.setOutputRange(-1, 1);
-    BackRight.PIDController.setOutputRange(-1, 1);
+    FrontRight.SteerPIDController.setOutputRange(-1, 1);
+    FrontLeft.SteerPIDController.setOutputRange(-1, 1);
+    BackLeft.SteerPIDController.setOutputRange(-1, 1);
+    BackRight.SteerPIDController.setOutputRange(-1, 1);
 
-    FrontRightDrive.PIDController.setOutputRange(-1, 1);
-    FrontLeftDrive.PIDController.setOutputRange(-1, 1);
-    BackLeftDrive.PIDController.setOutputRange(-1, 1);
-    BackRightDrive.PIDController.setOutputRange(-1, 1);
+    FrontRight.DrivePIDController.setOutputRange(-1, 1);
+    FrontLeft.DrivePIDController.setOutputRange(-1, 1);
+    BackLeft.DrivePIDController.setOutputRange(-1, 1);
+    BackRight.DrivePIDController.setOutputRange(-1, 1);
 
-    FrontRight.PIDController.setP(P);
-    FrontLeft.PIDController.setP(P);
-    BackLeft.PIDController.setP(P);
-    BackRight.PIDController.setP(P);
+    FrontRight.SteerPIDController.setP(P);
+    FrontLeft.SteerPIDController.setP(P);
+    BackLeft.SteerPIDController.setP(P);
+    BackRight.SteerPIDController.setP(P);
 
-    FrontRightDrive.PIDController.setP(P);
-    FrontLeftDrive.PIDController.setP(P);
-    BackLeftDrive.PIDController.setP(P);
-    BackRightDrive.PIDController.setP(P);
+    FrontRight.DrivePIDController.setP(P);
+    FrontLeft.DrivePIDController.setP(P);
+    BackLeft.DrivePIDController.setP(P);
+    BackRight.DrivePIDController.setP(P);
 
-    FrontRight.PIDController.setI(I);
-    FrontLeft.PIDController.setI(I);
-    BackLeft.PIDController.setI(I);
-    BackRight.PIDController.setI(I);
+    FrontRight.SteerPIDController.setI(I);
+    FrontLeft.SteerPIDController.setI(I);
+    BackLeft.SteerPIDController.setI(I);
+    BackRight.SteerPIDController.setI(I);
 
-    FrontRightDrive.PIDController.setI(I);
-    FrontLeftDrive.PIDController.setI(I);
-    BackLeftDrive.PIDController.setI(I);
-    BackRightDrive.PIDController.setI(I);
+    FrontRight.DrivePIDController.setI(I);
+    FrontLeft.DrivePIDController.setI(I);
+    BackLeft.DrivePIDController.setI(I);
+    BackRight.DrivePIDController.setI(I);
 
-    FrontRight.PIDController.setD(D);
-    FrontLeft.PIDController.setD(D);
-    BackLeft.PIDController.setD(D);
-    BackRight.PIDController.setD(D);
+    FrontRight.SteerPIDController.setD(D);
+    FrontLeft.SteerPIDController.setD(D);
+    BackLeft.SteerPIDController.setD(D);
+    BackRight.SteerPIDController.setD(D);
 
-    FrontRightDrive.PIDController.setD(D);
-    FrontLeftDrive.PIDController.setD(D);
-    BackLeftDrive.PIDController.setD(D);
-    BackRightDrive.PIDController.setD(D);
+    FrontRight.DrivePIDController.setD(D);
+    FrontLeft.DrivePIDController.setD(D);
+    BackLeft.DrivePIDController.setD(D);
+    BackRight.DrivePIDController.setD(D);
 
   }
 
@@ -204,6 +213,7 @@ public class Robot extends TimedRobot {
     //Find right joystick positions once, to prevent discrepancies
     RightStickX = RightStick.getX();
     RightStickY = RightStick.getY();
+    RightStickZ = (1 - ((RightStick.getZ() + 1) / 2));
     RightStickTwist = RightStick.getRawAxis(3);
     LeftStickY = LeftStick.getY();
 
@@ -212,7 +222,6 @@ public class Robot extends TimedRobot {
 
     if (RobotAng < 0) {
       RobotAng = (Math.abs(RobotAng) + 180);
-      
     }
 
     if (Math.abs(RightStickX) < 0.1) {
@@ -229,7 +238,7 @@ public class Robot extends TimedRobot {
     }
 
     //Set ChassisSpeeds for actual movement
-    ChassisSpeeds speeds = new ChassisSpeeds((RightStickY * -1), RightStickX, (RightStickTwist * 2));
+    ChassisSpeeds speeds = new ChassisSpeeds(((RightStickY * -1) * RightStickZ), (RightStickX * RightStickZ), ((RightStickTwist * 2) * RightStickZ));
 
     //Convert to module states
     SwerveModuleState[] ModuleStates = Kinematics.toSwerveModuleStates(speeds);
@@ -249,49 +258,59 @@ public class Robot extends TimedRobot {
     //Update Odometry for gyro implementation
     //Odometry.update(ahrs.getRotation2d(), ModuleStates);
 
-    if(RightStick.getRawButtonPressed(4)) {
+    if(RightStick.getRawButtonPressed(2)) {
       ArcadeDrive.arcadeDrive(RightStickY, RightStickTwist);
-      FrontRight.PIDController.setReference(0, ControlType.kPosition);
-      FrontLeft.PIDController.setReference(0, ControlType.kPosition);
-      BackLeft.PIDController.setReference(0, ControlType.kPosition);
-      BackRight.PIDController.setReference(0, ControlType.kPosition);
+      FrontRight.SteerPIDController.setReference(0, ControlType.kPosition);
+      FrontLeft.SteerPIDController.setReference(0, ControlType.kPosition);
+      BackLeft.SteerPIDController.setReference(0, ControlType.kPosition);
+      BackRight.SteerPIDController.setReference(0, ControlType.kPosition);
     }
     else {
+      FrontRight.DistToPos = ((Math.abs((FrontRight.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((frontRight.angle.getDegrees() / 360.0)))));
+      FrontLeft.DistToPos = ((Math.abs((FrontLeft.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((frontLeft.angle.getDegrees() / 360.0)))));
+      BackLeft.DistToPos = ((Math.abs((BackLeft.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((backLeft.angle.getDegrees() / 360.0)))));
+      BackRight.DistToPos = ((Math.abs((BackRight.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((backRight.angle.getDegrees() / 360.0)))));
+
+      FrontRight.DistToPos = (1 - FrontRight.DistToPos);
+      FrontLeft.DistToPos = (1 - FrontLeft.DistToPos);
+      BackLeft.DistToPos = (1 - BackLeft.DistToPos);
+      BackRight.DistToPos = (1 - BackRight.DistToPos);
+
+      FrontRight.DistSpdMod = Math.pow(FrontRight.DistToPos, 5);
+      FrontLeft.DistSpdMod = Math.pow(FrontLeft.DistToPos, 5);
+      BackLeft.DistSpdMod = Math.pow(BackLeft.DistToPos, 5);
+      BackRight.DistSpdMod = Math.pow(BackRight.DistToPos, 5);
+
       FrontRight.WantedAng = ((frontRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
       FrontLeft.WantedAng = ((frontLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
       BackLeft.WantedAng = ((backLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
       BackRight.WantedAng = ((backRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
 
-      FrontRight.NeededAng = (((RobotAng / 360) * (59.0 + (1.0/6.0))) - FrontRight.WantedAng);
-      FrontLeft.NeededAng = (((RobotAng / 360) * (59.0 + (1.0/6.0))) - FrontLeft.WantedAng);
-      BackLeft.NeededAng = (((RobotAng / 360) * (59.0 + (1.0/6.0))) - BackLeft.WantedAng);
-      BackRight.NeededAng = (((RobotAng / 360) * (59.0 + (1.0/6.0))) - BackRight.WantedAng);
-
-      FrontRight.PIDController.setReference(FrontRight.WantedAng, ControlType.kPosition);
-      FrontLeft.PIDController.setReference(FrontLeft.WantedAng, ControlType.kPosition);
-      BackLeft.PIDController.setReference(BackLeft.WantedAng, ControlType.kPosition);
-      BackRight.PIDController.setReference(BackRight.WantedAng, ControlType.kPosition);
+      FrontRight.SteerPIDController.setReference(FrontRight.WantedAng, ControlType.kPosition);
+      FrontLeft.SteerPIDController.setReference(FrontLeft.WantedAng, ControlType.kPosition);
+      BackLeft.SteerPIDController.setReference(BackLeft.WantedAng, ControlType.kPosition);
+      BackRight.SteerPIDController.setReference(BackRight.WantedAng, ControlType.kPosition);
       
 
-      FrontRight.Drive.set(frontRight.speedMetersPerSecond / 3);
-      FrontLeft.Drive.set(frontLeft.speedMetersPerSecond / 3);
-      BackLeft.Drive.set(backLeft.speedMetersPerSecond / 3);
-      BackRight.Drive.set(backRight.speedMetersPerSecond / 3);
+      FrontRight.Drive.set((frontRight.speedMetersPerSecond) * FrontRight.DistSpdMod);
+      FrontLeft.Drive.set((frontLeft.speedMetersPerSecond) * FrontLeft.DistSpdMod);
+      BackLeft.Drive.set((backLeft.speedMetersPerSecond) * BackLeft.DistSpdMod);
+      BackRight.Drive.set((backRight.speedMetersPerSecond) * BackRight.DistSpdMod);
     }
 
     if (RightStick.getRawButton(1)){
-      //ShooterTop.set(-.5);
+      ShooterTop.set(-.5);
       ShooterBottom.set(-.25);
     }
     else{
       if(LeftStick.getRawButton(4)){
-        //ShooterTop.set(-.5);
+        ShooterTop.set(-.5);
       } 
       else if(LeftStick.getRawButton(6)){
-        //ShooterTop.set(.5);
+        ShooterTop.set(.5);
       }
       else{
-        //ShooterTop.set(0)
+        ShooterTop.set(0);
       }
       if(RightStick.getRawButton(3)){
         ShooterBottom.set(-.25);
@@ -320,29 +339,66 @@ public class Robot extends TimedRobot {
   //Autonomous right away
   @Override
   public void autonomousInit(){
-
-    System.out.println("Autonomous activated...");
-    System.out.println("*Redacted*");
-    System.out.println("*Redacted*");
-    System.out.println("*Redacted*");
-    System.out.println("*Redacted*");
-    System.out.println("*Redacted*");
-  
+    HasBeenRun = false;
   }
 
   //Autonomous repeat
   @Override
-  public void autonomousPeriodic(){
-
-    FrontRightDrive.PIDController.setReference(10, ControlType.kPosition);
-    FrontLeftDrive.PIDController.setReference(FrontLeft.WantedAng, ControlType.kPosition);
-    BackLeftDrive.PIDController.setReference(BackLeft.WantedAng, ControlType.kPosition);
-    BackRightDrive.PIDController.setReference(BackRight.WantedAng, ControlType.kPosition);
-   
+  public void autonomousPeriodic(){ 
+    FrontRight.SteerPIDController.setReference(0, ControlType.kPosition);
+    FrontLeft.SteerPIDController.setReference(0, ControlType.kPosition);
+    BackLeft.SteerPIDController.setReference(0, ControlType.kPosition);
+    BackRight.SteerPIDController.setReference(0, ControlType.kPosition);
+    
+    if (HasBeenRun != true){
+      timer.reset();
+      timer.start();
+      HasBeenRun = true;
+    }
+    while (timer.get() < .5){
+      FrontRight.Drive.set(-.25);
+      FrontLeft.Drive.set(-.25);
+      BackLeft.Drive.set(-.25);
+      BackRight.Drive.set(-.25);
+      ShooterBottom.set(-.5);
+    }
+    while (.5 < timer.get() & timer.get() < 1){
+      FrontRight.Drive.set(0);
+      FrontLeft.Drive.set(0);
+      BackLeft.Drive.set(0);
+      BackRight.Drive.set(0);
+      ShooterTop.set(1);
+      ShooterBottom.set(-.5);
+    }
+    while (1 < timer.get() & timer.get() < 3.5){
+      FrontRight.Drive.set(.25);
+      FrontLeft.Drive.set(.25);
+      BackLeft.Drive.set(.25);
+      BackRight.Drive.set(.25);
+      ShooterTop.set(0);
+      ShooterBottom.set(-.5);
+    }
+    while (3.5 < timer.get() & timer.get() < 4.5){
+      FrontRight.Drive.set(0);
+      FrontLeft.Drive.set(0);
+      BackLeft.Drive.set(0);
+      BackRight.Drive.set(0);
+      ShooterBottom.set(-.5);
+    }
+    while (4.5 < timer.get() & timer.get() < 7){
+      FrontRight.Drive.set(-.25);
+      FrontLeft.Drive.set(-.25);
+      BackLeft.Drive.set(-.25);
+      BackRight.Drive.set(-.25);
+      ShooterBottom.set(0);
+    }
+    while (7 < timer.get() & timer.get() < 10){
+      FrontRight.Drive.set(0);
+      FrontLeft.Drive.set(0);
+      BackLeft.Drive.set(0);
+      BackRight.Drive.set(0);
+      ShooterTop.set(-1);
+      ShooterBottom.set(-.5);
+    }
   }
-
-
-
-
-
 }
