@@ -34,6 +34,7 @@ import org.ejml.equation.Variable;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
+import edu.wpi.first.cameraserver.CameraServer;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
@@ -41,6 +42,9 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.kinematics.SwerveDriveOdometry;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
+import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableEntry;
+import edu.wpi.first.networktables.NetworkTableInstance;
 
 /**
  * This is a demo program showing the use of the RobotDrive class, specifically
@@ -59,6 +63,7 @@ public class Robot extends TimedRobot {
   private double RightStickZ;
   private double RightStickTwist;
   private double LeftStickY;
+  private double LeftStickZ;
   private double RobotAng;
   private boolean HasBeenRun;
   private CANSparkMax ShooterTop;
@@ -205,7 +210,6 @@ public class Robot extends TimedRobot {
     FrontLeft.DrivePIDController.setD(D);
     BackLeft.DrivePIDController.setD(D);
     BackRight.DrivePIDController.setD(D);
-
   }
 
   @Override
@@ -216,6 +220,7 @@ public class Robot extends TimedRobot {
     RightStickZ = (1 - ((RightStick.getZ() + 1) / 2));
     RightStickTwist = RightStick.getRawAxis(3);
     LeftStickY = LeftStick.getY();
+    LeftStickZ = (1 - ((LeftStick.getZ() + 1) / 2));
 
     // Find angle of the robot, to allow for strafing while rotating
     RobotAng = ahrs.getYaw();
@@ -238,7 +243,7 @@ public class Robot extends TimedRobot {
     }
 
     //Set ChassisSpeeds for actual movement
-    ChassisSpeeds speeds = new ChassisSpeeds(((RightStickY * -1) * RightStickZ), (RightStickX * RightStickZ), ((RightStickTwist * 2) * RightStickZ));
+    ChassisSpeeds speeds = new ChassisSpeeds(((RightStickY * -1) * RightStickZ), (RightStickX * RightStickZ), (RightStickTwist * LeftStickZ));
 
     //Convert to module states
     SwerveModuleState[] ModuleStates = Kinematics.toSwerveModuleStates(speeds);
@@ -291,32 +296,31 @@ public class Robot extends TimedRobot {
       BackLeft.SteerPIDController.setReference(BackLeft.WantedAng, ControlType.kPosition);
       BackRight.SteerPIDController.setReference(BackRight.WantedAng, ControlType.kPosition);
       
-
-      FrontRight.Drive.set((frontRight.speedMetersPerSecond) * FrontRight.DistSpdMod);
-      FrontLeft.Drive.set((frontLeft.speedMetersPerSecond) * FrontLeft.DistSpdMod);
-      BackLeft.Drive.set((backLeft.speedMetersPerSecond) * BackLeft.DistSpdMod);
-      BackRight.Drive.set((backRight.speedMetersPerSecond) * BackRight.DistSpdMod);
+      FrontRight.Drive.set((frontRight.speedMetersPerSecond / 2) * FrontRight.DistSpdMod);
+      FrontLeft.Drive.set((frontLeft.speedMetersPerSecond / 2) * FrontLeft.DistSpdMod);
+      BackLeft.Drive.set((backLeft.speedMetersPerSecond / 2) * BackLeft.DistSpdMod);
+      BackRight.Drive.set((backRight.speedMetersPerSecond / 2) * BackRight.DistSpdMod);
     }
 
     if (RightStick.getRawButton(1)){
-      ShooterTop.set(-.5);
-      ShooterBottom.set(-.25);
+      ShooterTop.set(-.6);
+      ShooterBottom.set(-.5);
     }
     else{
       if(LeftStick.getRawButton(4)){
-        ShooterTop.set(-.5);
+        ShooterTop.set(-.6);
       } 
       else if(LeftStick.getRawButton(6)){
-        ShooterTop.set(.5);
+        ShooterTop.set(.6);
       }
       else{
         ShooterTop.set(0);
       }
       if(RightStick.getRawButton(3)){
-        ShooterBottom.set(-.25);
+        ShooterBottom.set(-.5);
       }
       else if(RightStick.getRawButton(5)){
-        ShooterBottom.set(.25);
+        ShooterBottom.set(.5);
       }
       else{
         ShooterBottom.set(0);
@@ -356,21 +360,14 @@ public class Robot extends TimedRobot {
       HasBeenRun = true;
     }
     while (timer.get() < .5){
-      FrontRight.Drive.set(-.25);
-      FrontLeft.Drive.set(-.25);
-      BackLeft.Drive.set(-.25);
-      BackRight.Drive.set(-.25);
-      ShooterBottom.set(-.5);
-    }
-    while (.5 < timer.get() & timer.get() < 1){
       FrontRight.Drive.set(0);
       FrontLeft.Drive.set(0);
       BackLeft.Drive.set(0);
       BackRight.Drive.set(0);
-      ShooterTop.set(1);
+      ShooterTop.set(-.6);
       ShooterBottom.set(-.5);
     }
-    while (1 < timer.get() & timer.get() < 3.5){
+    while (.5 < timer.get() & timer.get() < 3){
       FrontRight.Drive.set(.25);
       FrontLeft.Drive.set(.25);
       BackLeft.Drive.set(.25);
@@ -378,27 +375,35 @@ public class Robot extends TimedRobot {
       ShooterTop.set(0);
       ShooterBottom.set(-.5);
     }
-    while (3.5 < timer.get() & timer.get() < 4.5){
+    while (3 < timer.get() & timer.get() < 4){
       FrontRight.Drive.set(0);
       FrontLeft.Drive.set(0);
       BackLeft.Drive.set(0);
       BackRight.Drive.set(0);
       ShooterBottom.set(-.5);
     }
-    while (4.5 < timer.get() & timer.get() < 7){
+    while (4 < timer.get() & timer.get() < 6.5){
       FrontRight.Drive.set(-.25);
       FrontLeft.Drive.set(-.25);
       BackLeft.Drive.set(-.25);
       BackRight.Drive.set(-.25);
       ShooterBottom.set(0);
     }
-    while (7 < timer.get() & timer.get() < 10){
+    while (6.5 < timer.get() & timer.get() < 10){
       FrontRight.Drive.set(0);
       FrontLeft.Drive.set(0);
       BackLeft.Drive.set(0);
       BackRight.Drive.set(0);
-      ShooterTop.set(-1);
+      ShooterTop.set(-.6);
       ShooterBottom.set(-.5);
+    }
+    while (10 < timer.get() & timer.get() < 11){
+      FrontRight.Drive.set(0);
+      FrontLeft.Drive.set(0);
+      BackLeft.Drive.set(0);
+      BackRight.Drive.set(0);
+      ShooterTop.set(0);
+      ShooterBottom.set(0);
     }
   }
 }
