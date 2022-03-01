@@ -235,7 +235,7 @@ public class Robot extends TimedRobot {
     if (Math.abs(RightStickY) < 0.1) {
       RightStickY = 0;
     }
-    if (Math.abs(RightStickTwist) < 0.1) {
+    if (Math.abs(RightStickTwist) < 0.15) {
       RightStickTwist = 0;
     }
     if (Math.abs(LeftStickY) < 0.1) {
