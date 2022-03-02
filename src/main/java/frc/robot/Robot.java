@@ -52,9 +52,6 @@ import edu.wpi.first.networktables.NetworkTableInstance;
  * necessary to operate a robot with tank drive.
  */
 public class Robot extends TimedRobot {
-  private MotorControllerGroup RightSide;
-  private MotorControllerGroup LeftSide;
-  private DifferentialDrive ArcadeDrive;
   private Joystick LeftStick;
   private Joystick RightStick;
   private AHRS ahrs;
@@ -130,10 +127,6 @@ public class Robot extends TimedRobot {
     ShooterTop = new CANSparkMax(10, MotorType.kBrushless);
     ArmTilt = new CANSparkMax(11, MotorType.kBrushed);
     ArmExtend = new CANSparkMax(12, MotorType.kBrushed);
-
-    RightSide = new MotorControllerGroup(FrontRight.Drive,BackRight.Drive);
-    LeftSide = new MotorControllerGroup(FrontLeft.Drive,BackLeft.Drive);
-    ArcadeDrive = new DifferentialDrive(LeftSide, RightSide);
 
     FrontRight.SteerEncoder = FrontRight.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
     FrontLeft.SteerEncoder = FrontLeft.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
@@ -241,7 +234,7 @@ public class Robot extends TimedRobot {
     if (Math.abs(LeftStickY) < 0.1) {
       LeftStickY = 0;
     }
-
+    
     //Set ChassisSpeeds for actual movement
     ChassisSpeeds speeds = new ChassisSpeeds(((RightStickY * -1) * RightStickZ), (RightStickX * RightStickZ), (RightStickTwist * LeftStickZ));
 
@@ -263,44 +256,35 @@ public class Robot extends TimedRobot {
     //Update Odometry for gyro implementation
     //Odometry.update(ahrs.getRotation2d(), ModuleStates);
 
-    if(RightStick.getRawButtonPressed(2)) {
-      ArcadeDrive.arcadeDrive(RightStickY, RightStickTwist);
-      FrontRight.SteerPIDController.setReference(0, ControlType.kPosition);
-      FrontLeft.SteerPIDController.setReference(0, ControlType.kPosition);
-      BackLeft.SteerPIDController.setReference(0, ControlType.kPosition);
-      BackRight.SteerPIDController.setReference(0, ControlType.kPosition);
-    }
-    else {
-      FrontRight.DistToPos = ((Math.abs((FrontRight.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((frontRight.angle.getDegrees() / 360.0)))));
-      FrontLeft.DistToPos = ((Math.abs((FrontLeft.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((frontLeft.angle.getDegrees() / 360.0)))));
-      BackLeft.DistToPos = ((Math.abs((BackLeft.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((backLeft.angle.getDegrees() / 360.0)))));
-      BackRight.DistToPos = ((Math.abs((BackRight.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((backRight.angle.getDegrees() / 360.0)))));
+    FrontRight.DistToPos = ((Math.abs((FrontRight.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((frontRight.angle.getDegrees() / 360.0)))));
+    FrontLeft.DistToPos = ((Math.abs((FrontLeft.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((frontLeft.angle.getDegrees() / 360.0)))));
+    BackLeft.DistToPos = ((Math.abs((BackLeft.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((backLeft.angle.getDegrees() / 360.0)))));
+    BackRight.DistToPos = ((Math.abs((BackRight.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((backRight.angle.getDegrees() / 360.0)))));
 
-      FrontRight.DistToPos = (1 - FrontRight.DistToPos);
-      FrontLeft.DistToPos = (1 - FrontLeft.DistToPos);
-      BackLeft.DistToPos = (1 - BackLeft.DistToPos);
-      BackRight.DistToPos = (1 - BackRight.DistToPos);
+    FrontRight.DistToPos = (1 - FrontRight.DistToPos);
+    FrontLeft.DistToPos = (1 - FrontLeft.DistToPos);
+    BackLeft.DistToPos = (1 - BackLeft.DistToPos);
+    BackRight.DistToPos = (1 - BackRight.DistToPos);
 
-      FrontRight.DistSpdMod = Math.pow(FrontRight.DistToPos, 5);
-      FrontLeft.DistSpdMod = Math.pow(FrontLeft.DistToPos, 5);
-      BackLeft.DistSpdMod = Math.pow(BackLeft.DistToPos, 5);
-      BackRight.DistSpdMod = Math.pow(BackRight.DistToPos, 5);
+    FrontRight.DistSpdMod = Math.pow(FrontRight.DistToPos, 5);
+    FrontLeft.DistSpdMod = Math.pow(FrontLeft.DistToPos, 5);
+    BackLeft.DistSpdMod = Math.pow(BackLeft.DistToPos, 5);
+    BackRight.DistSpdMod = Math.pow(BackRight.DistToPos, 5);
 
-      FrontRight.WantedAng = ((frontRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
-      FrontLeft.WantedAng = ((frontLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
-      BackLeft.WantedAng = ((backLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
-      BackRight.WantedAng = ((backRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+    FrontRight.WantedAng = ((frontRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+    FrontLeft.WantedAng = ((frontLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+    BackLeft.WantedAng = ((backLeft.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
+    BackRight.WantedAng = ((backRight.angle.getDegrees() / 360.0) * (59.0 + (1.0/6.0)));
 
-      FrontRight.SteerPIDController.setReference(FrontRight.WantedAng, ControlType.kPosition);
-      FrontLeft.SteerPIDController.setReference(FrontLeft.WantedAng, ControlType.kPosition);
-      BackLeft.SteerPIDController.setReference(BackLeft.WantedAng, ControlType.kPosition);
-      BackRight.SteerPIDController.setReference(BackRight.WantedAng, ControlType.kPosition);
+    FrontRight.SteerPIDController.setReference(FrontRight.WantedAng, ControlType.kPosition);
+    FrontLeft.SteerPIDController.setReference(FrontLeft.WantedAng, ControlType.kPosition);
+    BackLeft.SteerPIDController.setReference(BackLeft.WantedAng, ControlType.kPosition);
+    BackRight.SteerPIDController.setReference(BackRight.WantedAng, ControlType.kPosition);
       
-      FrontRight.Drive.set((frontRight.speedMetersPerSecond / 2) * FrontRight.DistSpdMod);
-      FrontLeft.Drive.set((frontLeft.speedMetersPerSecond / 2) * FrontLeft.DistSpdMod);
-      BackLeft.Drive.set((backLeft.speedMetersPerSecond / 2) * BackLeft.DistSpdMod);
-      BackRight.Drive.set((backRight.speedMetersPerSecond / 2) * BackRight.DistSpdMod);
-    }
+    FrontRight.Drive.set((frontRight.speedMetersPerSecond / 2) * FrontRight.DistSpdMod);
+    FrontLeft.Drive.set((frontLeft.speedMetersPerSecond / 2) * FrontLeft.DistSpdMod);
+    BackLeft.Drive.set((backLeft.speedMetersPerSecond / 2) * BackLeft.DistSpdMod);
+    BackRight.Drive.set((backRight.speedMetersPerSecond / 2) * BackRight.DistSpdMod);
 
     if (RightStick.getRawButton(1)){
       ShooterTop.set(-.6);
