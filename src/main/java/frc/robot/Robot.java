@@ -286,7 +286,7 @@ public class Robot extends TimedRobot {
     BackLeft.Drive.set((backLeft.speedMetersPerSecond / 2) * BackLeft.DistSpdMod);
     BackRight.Drive.set((backRight.speedMetersPerSecond / 2) * BackRight.DistSpdMod);
 
-    if (RightStick.getRawButton(1)){
+    if (LeftStick.getRawButton(1)){
       ShooterTop.set(-.6);
       ShooterBottom.set(-.5);
     }
