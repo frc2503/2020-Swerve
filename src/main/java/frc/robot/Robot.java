@@ -311,7 +311,7 @@ public class Robot extends TimedRobot {
       }
     }
 
-    ArmTilt.set(LeftStickY/2);
+    ArmTilt.set(LeftStickY/-2);
 
     if(RightStick.getRawButton(4)){
       ArmExtend.set(1);
