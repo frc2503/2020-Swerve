@@ -34,6 +34,7 @@ import org.ejml.equation.Variable;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
+import edu.wpi.first.wpilibj.interfaces.Gyro;
 import edu.wpi.first.cameraserver.CameraServer;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -70,6 +71,7 @@ public class Robot extends TimedRobot {
   private double P;
   private double I;
   private double D;
+  private Rotation2d GyroPos;
   private Translation2d FrontRightLocation = new Translation2d(0.381, -0.381);
   private Translation2d FrontLeftLocation = new Translation2d(0.381, 0.381);
   private Translation2d BackLeftLocation = new Translation2d(-0.381, -0.381);
@@ -77,7 +79,7 @@ public class Robot extends TimedRobot {
   private Timer timer;
 
   SwerveDriveKinematics Kinematics = new SwerveDriveKinematics(FrontRightLocation, FrontLeftLocation, BackLeftLocation, BackRightLocation);
-  //SwerveDriveOdometry Odometry = new SwerveDriveOdometry(Kinematics, ahrs.getRotation2d());
+  SwerveDriveOdometry Odometry;
 
   private class Wheel {
     private CANSparkMax Drive;
@@ -114,6 +116,8 @@ public class Robot extends TimedRobot {
     LeftStick = new Joystick(1);
     RightStick = new Joystick(0);
     ahrs = new AHRS(I2C.Port.kMXP);
+    GyroPos = ahrs.getRotation2d();
+    Odometry = new SwerveDriveOdometry(Kinematics, GyroPos);
 
     FrontRight.Drive = new CANSparkMax(1, MotorType.kBrushless);
     FrontLeft.Drive = new CANSparkMax(2, MotorType.kBrushless);
@@ -216,7 +220,7 @@ public class Robot extends TimedRobot {
     LeftStickZ = (1 - ((LeftStick.getZ() + 1) / 2));
 
     // Find angle of the robot, to allow for strafing while rotating
-    RobotAng = ahrs.getYaw();
+    GyroPos = ahrs.getRotation2d();
 
     if (RobotAng < 0) {
       RobotAng = (Math.abs(RobotAng) + 180);
@@ -254,7 +258,7 @@ public class Robot extends TimedRobot {
     SwerveModuleState backRight = ModuleStates[3];
 
     //Update Odometry for gyro implementation
-    //Odometry.update(ahrs.getRotation2d(), ModuleStates);
+    Odometry.update(GyroPos, ModuleStates);
 
     FrontRight.DistToPos = ((Math.abs((FrontRight.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((frontRight.angle.getDegrees() / 360.0)))));
     FrontLeft.DistToPos = ((Math.abs((FrontLeft.SteerEncoder.getPosition() / (59.0 + (1.0/6.0))) - ((frontLeft.angle.getDegrees() / 360.0)))));
