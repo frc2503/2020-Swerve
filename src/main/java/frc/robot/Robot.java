@@ -50,6 +50,10 @@ import edu.wpi.first.math.kinematics.SwerveModuleState;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.wpilibj.Compressor;
+import edu.wpi.first.wpilibj.DoubleSolenoid;
+import edu.wpi.first.wpilibj.PneumaticsModuleType;
+import edu.wpi.first.wpilibj.DoubleSolenoid.Value;
 
 /**
  * This is a demo program showing the use of the RobotDrive class, specifically
@@ -69,7 +73,6 @@ public class Robot extends TimedRobot {
   private boolean HasBeenRun;
   private CANSparkMax ShooterTop;
   private CANSparkMax ShooterBottom;
-  private CANSparkMax ArmTilt;
   private CANSparkMax ArmExtend;
   private double P;
   private double I;
@@ -79,6 +82,8 @@ public class Robot extends TimedRobot {
   private Translation2d BackLeftLocation = new Translation2d(-0.381, -0.381);
   private Translation2d BackRightLocation = new Translation2d(-0.381, 0.381);
   private Timer timer;
+  private final Compressor Compressor = new Compressor(0, PneumaticsModuleType.CTREPCM);
+  private final DoubleSolenoid Solenoid = new DoubleSolenoid(PneumaticsModuleType.CTREPCM, 0, 1);
 
   SwerveDriveKinematics Kinematics = new SwerveDriveKinematics(FrontRightLocation, FrontLeftLocation, BackLeftLocation, BackRightLocation);
   SwerveDriveOdometry Odometry;
@@ -112,6 +117,7 @@ public class Robot extends TimedRobot {
 
   @Override
   public void robotInit() {
+    CameraServer.startAutomaticCapture();
     timer = new Timer();
     LeftStick = new Joystick(1);
     RightStick = new Joystick(2);
@@ -128,8 +134,7 @@ public class Robot extends TimedRobot {
     BackRight.Steer = new CANSparkMax(8, MotorType.kBrushed);
     ShooterBottom = new CANSparkMax(9, MotorType.kBrushless);
     ShooterTop = new CANSparkMax(10, MotorType.kBrushless);
-    ArmTilt = new CANSparkMax(11, MotorType.kBrushed);
-    ArmExtend = new CANSparkMax(12, MotorType.kBrushed);
+    ArmExtend = new CANSparkMax(11, MotorType.kBrushed);
 
     
     FrontRight.SteerEncoder = FrontRight.Steer.getEncoder(SparkMaxRelativeEncoder.Type.kQuadrature, (28));
@@ -221,6 +226,9 @@ public class Robot extends TimedRobot {
     FrontLeft.DrivePIDController.setD(D);
     BackLeft.DrivePIDController.setD(D);
     BackRight.DrivePIDController.setD(D);
+
+    Solenoid.set(Value.kOff);
+    Compressor.enableDigital();
   }
 
   @Override
@@ -330,7 +338,18 @@ public class Robot extends TimedRobot {
       }
     }
 
-    ArmTilt.set(LeftStickY/-2);
+    if(LeftStick.getRawButton(5) && !LeftStick.getRawButton(3)) {
+      Solenoid.set(Value.kForward);
+    } else if(LeftStick.getRawButton(3) && !LeftStick.getRawButton(5)) {
+      Solenoid.set(Value.kReverse);
+    } else {
+      Solenoid.set(Value.kOff);
+    }
+
+    if(LeftStick.getRawButtonPressed(2))
+      Compressor.disable();
+    if(RightStick.getRawButtonPressed(2))
+      Compressor.enableDigital();
 
     if(RightStick.getRawButton(4)){
       ArmExtend.set(1);
