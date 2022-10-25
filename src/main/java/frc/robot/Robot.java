@@ -182,7 +182,7 @@ public class Robot extends TimedRobot {
     FrontLeft.DrivePIDController = FrontLeft.Drive.getPIDController();
     BackRight.DrivePIDController = BackLeft.Drive.getPIDController();
     BackLeft.DrivePIDController = BackRight.Drive.getPIDController();
-   
+  
     P = 1;
     I = 0;
     D = 0;
@@ -233,6 +233,7 @@ public class Robot extends TimedRobot {
 
   @Override
   public void teleopPeriodic() {
+
     //Find right joystick positions once, to prevent discrepancies
     RightStickX = RightStick.getX();
     RightStickY = RightStick.getY();
@@ -352,13 +353,10 @@ public class Robot extends TimedRobot {
       Compressor.enableDigital();
 
     if(RightStick.getRawButton(4)){
-      ArmExtend.set(1);
+      Solenoid.set(DoubleSolenoid.Value.kReverse);
     }
     else if(RightStick.getRawButton(6)){
-      ArmExtend.set(-1);
-    }
-    else{
-      ArmExtend.set(0);
+      Solenoid.set(DoubleSolenoid.Value.kForward);
     }
   }
 
